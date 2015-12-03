@@ -1,9 +1,7 @@
 package pchannel
 
 import (
-	"crawler/common/counter"
 	"errors"
-	"strconv"
 	"time"
 )
 
@@ -34,7 +32,6 @@ type PChan struct {
 	sleepMS  time.Duration
 	closeAll bool
 	capacity int
-	ct       *counter.Counter
 }
 
 func NewPChan(levels int, capacity int) *PChan {
@@ -43,7 +40,7 @@ func NewPChan(levels int, capacity int) *PChan {
 	ret.sleepMS = 1
 	ret.closeAll = false
 	ret.capacity = capacity
-	ret.ct = counter.NewCounter()
+
 	for i := 0; i < levels; i++ {
 		ret.chs = append(ret.chs, make(chan interface{}, capacity*(levels-i)))
 	}
@@ -60,7 +57,6 @@ func (self *PChan) Stat() map[string]interface{} {
 		chanStat = append(chanStat, len(ch))
 	}
 	ret["chs"] = chanStat
-	ret["counter"] = self.ct.Stat()
 	return ret
 }
 
@@ -73,19 +69,15 @@ func (self *PChan) Close() {
 
 func (self *PChan) Push(priority int, val interface{}) error {
 	if priority >= len(self.chs) || priority < 0 {
-		self.ct.Incr("pchannel.err.priority_out_of_index", 1)
 		return NewPChanError(PRIORITY_OUT_OF_INDEX)
 	}
 
 	idx := len(self.chs) - priority - 1
 	if len(self.chs[idx]) > self.capacity*(priority+1)/2 {
-		self.ct.Incr("pchannel.err.channel_full", 1)
 		return NewPChanError(CHANNEL_FULL)
 	}
 
 	self.chs[idx] <- val
-	self.ct.Incr("pchannel.push", 1)
-	self.ct.Incr("pchannel.push.priority."+strconv.Itoa(priority), 1)
 	return nil
 }
 
@@ -98,11 +90,9 @@ func (self *PChan) Size() int {
 }
 
 func (self *PChan) Pop() (interface{}, error) {
-	for k, ch := range self.chs {
+	for _, ch := range self.chs {
 		if len(ch) > 0 {
 			self.sleepMS = 1
-			self.ct.Incr("pchannel.pop", 1)
-			self.ct.Incr("pchannel.pop.priority."+strconv.Itoa(len(self.chs)-k-1), 1)
 			return <-ch, nil
 		}
 	}
@@ -118,11 +108,9 @@ func (self *PChan) Pop() (interface{}, error) {
 }
 
 func (self *PChan) QuickPop() (interface{}, error) {
-	for k, ch := range self.chs {
+	for _, ch := range self.chs {
 		if len(ch) > 0 {
 			self.sleepMS = 1
-			self.ct.Incr("pchannel.pop", 1)
-			self.ct.Incr("pchannel.pop.priority."+strconv.Itoa(len(self.chs)-k-1), 1)
 			return <-ch, nil
 		}
 	}
